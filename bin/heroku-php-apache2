@@ -304,11 +304,13 @@ pids=()
 # 2d) || true so that set -e doesn't cause a mess if the kill returns 1 on "no such process" cases (which is likely on Heroku where all processes get killed and not just this top level one)
 # 2e) do that in the background and 'wait' on those processes, sending wait's output to /dev/null - this prevents the logs getting cluttered with "vendor/bin/heroku-...: line 309:    96 Terminated" messages (we can't use 'disown' after launching programs for that purpose because that removes the jobs from the shell's jobs table and the we can no longer 'wait' on the program)
 # 3) kill ourselves with the correct signal in case we're handling SIGQUIT or SIGTERM (http://www.cons.org/cracauer/sigint.html and http://mywiki.wooledge.org/SignalTrap#Special_Note_On_SIGINT1)
-cleanup() { echo "Going down, terminating child processes..." >&2; rm -f ${wait_pipe} || true; kill -TERM "${pids[@]}" 2> /dev/null || true; }
-trap 'trap - QUIT EXIT; cleanup; kill -QUIT $$' QUIT
+cleanup() { kill -TERM "${pids[2]}" 2> /dev/null || true; wait "${pids[2]}"; kill -TERM "${pids[1]}" 2> /dev/null || true; wait "${pids[1]}"; kill -TERM "${pids[0]}" 2> /dev/null || true; wait "${pids[0]}"; rm -f ${wait_pipe} || true; }
+# if we get a SIGTERM, kill the web server, wait for it to terminate, then kill everything else, wait for that too, then we're done and can kill ourselves with SIGTERM (so that the calling process knows how and why we terminated)
 trap 'trap - TERM EXIT; cleanup; kill -TERM $$' TERM
-trap 'trap - EXIT; cleanup' EXIT
-# if FD 1 is a TTY (that's the -t 1 check), trap SIGINT/Ctrl+C, then same procedure as for QUIT and TERM above
+# on "regular" EXIT (i.e. when we reached the end of the script because a process exited unexpectedly) just exit
+trap 'trap - EXIT; echo "Process exited unexpectedly: $exitproc"; cleanup;' EXIT
+
+# if FD 1 is a TTY (that's the -t 1 check), trap SIGINT/Ctrl+C, then same procedure as for TERM above
 if [[ -t 1 ]]; then
 	trap 'trap - INT EXIT; cleanup; kill -INT $$' INT;
 # if FD 1 is not a TTY (e.g. when we're run through 'foreman start'), do nothing on SIGINT; the assumption is that the parent will send us a SIGTERM or something when this happens. With the trap above, Ctrl+C-ing out of a 'foreman start' run would trigger the INT trap both in Foreman and here (because Ctrl+C sends SIGINT to the entire process group, but there is no way to tell the two cases apart), and while the trap is still doing its shutdown work triggered by the SIGTERM from the Ctrl+C, Foreman would then send a SIGTERM because that's what it does when it receives a SIGINT itself.
@@ -347,6 +349,7 @@ fi
 
 	set +e
 
+	trap '' INT;
 	trap 'kill -TERM "${logs_procs[@]}" 2> /dev/null; rm -f $logs_pipe;' TERM
 
 	touch "${logs[@]}"
@@ -362,24 +365,24 @@ fi
 
 	wait
 	trap - TERM
-	wait || echo "tail" >&3
+	wait
+	echo "tail" >&3
 ) & pids+=($!)
-disown $!
 
 echo "Starting php-fpm..." >&2
 (
 	set +e
 
-	trap 'echo "php-fpm" >&3' EXIT
-	trap 'trap - EXIT; kill -QUIT $pid 2> /dev/null' TERM
+	trap '' INT;
+	trap 'kill -QUIT $pid 2> /dev/null' TERM
 
 	php-fpm --nodaemonize -y "$fpm_config" ${php_config:+-c "$php_config"} & pid=$!
 
 	wait $pid
 	trap - TERM
 	wait $pid
+	echo "php-fpm" >&3
 ) & pids+=($!)
-disown $!
 
 # wait a few seconds for FPM to finish initializing; otherwise an early request might break Apache with the FastCGI pipe not being ready
 sleep 2
@@ -388,7 +391,7 @@ echo "Starting httpd..." >&2
 (
 	set +e
 
-	trap 'echo "httpd" >&3' EXIT
+	trap '' INT;
 	trap 'trap - EXIT; kill -WINCH $pid 2> /dev/null' TERM
 
 	httpd -D NO_DETACH -c "Include $httpd_config" & pid=$!
@@ -396,8 +399,8 @@ echo "Starting httpd..." >&2
 	wait $pid
 	trap - TERM
 	wait $pid
+	echo "httpd" >&3
 ) & pids+=($!)
-disown $!
 
 # on Heroku, there is a "state changed from starting to up", but for local execution, we want a "ready" message
 [[ -z ${DYNO:-} || $verbose ]] && echo "Application ready for connections on port $PORT." >&2
@@ -407,7 +410,4 @@ disown $!
 # if the pipe unblocks and this executes, then we won't read it again, so if the traps further up kill the remaining subshells above, their writing to FD 3 will have no effect
 read exitproc <&3
 # we'll only reach this if one of the processes above has terminated
-echo "Process exited unexpectedly: $exitproc" >&2
-
 # this will trigger the EXIT trap further up and kill all remaining children
-exit 1
