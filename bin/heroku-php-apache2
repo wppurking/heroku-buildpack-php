@@ -381,7 +381,7 @@ fi
 	echo "Starting php-fpm..." >&2
 
 	php-fpm -x-nodaemonize -y "$fpm_config" ${php_config:+-c "$php_config"} & pid=$!
-	# TODO: wait for php-fpm pidfile in trap
+	# TODO: wait for pidfile in trap, otherwise a previous subshell failing will bring things down and send us a SIGTERM before the process may be able to react to the signal we're sending it
 	trap 'echo "Stopping php-fpm..." >&2; kill -QUIT $pid 2> /dev/null || true' TERM
 
 	wait $pid 2> /dev/null || true # redirect stderr so that the Bash's confusing "Terminated: …" lines are suppressed
@@ -393,13 +393,13 @@ fi
 	trap 'echo "httpd" >&3;' EXIT
 	trap '' INT;
 
-	# wait a few seconds for FPM to finish initializing; otherwise an early request might break Apache with the FastCGI pipe not being ready
+	# wait a few seconds for FPM to finish initializing; otherwise an early request might break the web server with the FastCGI pipe not being ready
 	sleep 2
 
 	echo "Starting httpd..." >&2
 
 	httpd -D NO_DETACH -c "Include $httpd_config" & pid=$!
-	# TODO: wait for httpd pidfile in trap
+	# TODO: wait for pidfile in trap, otherwise a previous subshell failing will bring things down and send us a SIGTERM before the process may be able to react to the signal we're sending it
 	trap 'echo "Stopping httpd..." >&2; kill -WINCH $pid 2> /dev/null || true' TERM
 
 	wait $pid 2> /dev/null || true # redirect stderr so that the Bash's confusing "Terminated: …" lines are suppressed
@@ -407,7 +407,7 @@ fi
 	wait $pid 2> /dev/null || true # redirect stderr so that the Bash's confusing "Terminated: …" lines are suppressed
 ) & pids+=($!)
 
-# TODO: wait for httpd pidfile here
+# TODO: wait for pidfile here
 # on Heroku, there is a "state changed from starting to up", but for local execution, we want a "ready" message
 [[ -z ${DYNO:-} || $verbose ]] && echo "Application ready for connections on port $PORT." >&2
 
