@@ -5,6 +5,7 @@
 ### CHG
 
 - Translate `NEW_RELIC_LOG_LEVEL` values "verbose" and "verbosedebug" to "debug" for `newrelic-daemon` [David Zuelke]
+- Dynamically poll for `newrelic-daemon` readiness on dyno boot instead of using blanket two-second wait [David Zuelke]
 
 ## v135 (2018-04-26)
 
