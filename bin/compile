@@ -110,7 +110,7 @@ mkdir -p $COMPOSER_HOME
 
 status "Bootstrapping..."
 
-s3_url="https://lang-php.s3.amazonaws.com/dist-${STACK}-stable/"
+s3_url="http://pa7s774ri.bkt.clouddn.com/dist-${STACK}-stable/"
 # prepend the default repo to the list configured by the user
 # list of repositories to use is in ascening order of precedence
 export_env_dir "$env_dir" '^HEROKU_PHP_PLATFORM_REPOSITORIES$'
