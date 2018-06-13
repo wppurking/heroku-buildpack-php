@@ -23,7 +23,7 @@ export BUILDPACK_LOG_FILE=${BUILDPACK_LOG_FILE:-/dev/null}
 source $bp_dir/bin/util/common.sh
 
 # stdlib
-source /dev/stdin <<< "$(curl_retry_on_18 --silent https://lang-common.s3.amazonaws.com/buildpack-stdlib/v8/stdlib.sh)"
+source /dev/stdin <<< "$(curl_retry_on_18 --silent http://pa7s774ri.bkt.clouddn.com/buildpack-stdlib/v8/stdlib.sh)"
 
 # failure counting
 source $bp_dir/bin/util/failures.sh
